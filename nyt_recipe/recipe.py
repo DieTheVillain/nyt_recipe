@@ -6,26 +6,6 @@ import bs4
 import re
 from output import *
 
-TEMPLATE = """\
-<html>
-<body>
-    <h1>{title}</h1>
-    <div>{image_tag}</div>
-    <p>{serving_size}</p>
-    <br>
-    <h2>Ingredients</h2>
-    <ul>
-{ingredients}
-    </ul>
-    <br>
-    <h2>Instructions</h2>
-    <ol>
-{instructions}
-    </ol>
-</body>
-</html>
-"""
-
 
 def _title_from_soup(soup):
     title = soup.title.string
@@ -133,16 +113,36 @@ class Recipe(object):
 <html>
 <head>
     <meta charset="utf-8">
+<style>
+            body {{
+                font-family: 'franklin', 'nyt-franklin', Arial, helvetica, sans-serif;
+                font-size: 12px;
+                margin: 0;
+                padding: 20px;
+                line-height: 1.6;
+            }}
+            h1 {{
+                font-family: 'franklin', 'nyt-franklin', Arial, helvetica, sans-serif;
+                font-size: 24px;
+            }}
+            p {{
+                font-size: 12px;
+                color: #333;
+            }}
+            img {{
+                max-width: 100%;
+                height: auto;
+                margin-bottom: 20px;
+            }}
+        </style>
 </head>
 <body>
     <h1>{title}</h1>
     {image_tag}
-    <br>
     <h2>Ingredients</h2>
     <ul>
 {ingredients}
     </ul>
-    <br>
     <h2>Instructions</h2>
     <ol>
 {instructions}
