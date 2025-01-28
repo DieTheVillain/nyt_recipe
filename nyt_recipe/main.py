@@ -1,7 +1,3 @@
-# (c) 2021 Ian Brault
-# This code is licensed under the MIT License (see LICENSE.txt for details)
-# Changes to allow for PDF and HTML writing with inclusion of header photo by Matthew St. Jean, 2025
-
 import argparse
 import os
 import sys
@@ -10,7 +6,6 @@ import subprocess
 from bs4 import BeautifulSoup
 from output import *
 from recipe import Recipe
-
 
 def download_image(image_url, output_path, image_name):
     try:
@@ -23,43 +18,55 @@ def download_image(image_url, output_path, image_name):
         print(f"Image saved as {image_path}")
         return image_path
     except requests.exceptions.RequestException as ex:
-        error(f"Failed to download image from {image_url}")
-        debug(str(ex))
+        error(f"Failed to download image from {image_url}: {ex}")
         return None
 
+def save_recipe_as_pdf(recipe_html, output_path, recipe_title):
+    stem = recipe_title.lower().replace(" ", "_").replace("'", "")
+    pdf_file = os.path.join(output_path, f"{stem}.pdf")
+    debug(f"saving to {pdf_file}")
+    try:
+        command = ["wkhtmltopdf", "-", pdf_file]
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        process.communicate(input=recipe_html.encode())
+        print(f"PDF saved to {pdf_file}")
+    except Exception as e:
+        error(f"Error generating PDF: {e}")
+
+def save_recipe_as_html(recipe_html, output_path, recipe_title):
+    stem = recipe_title.lower().replace(" ", "_").replace("'", "")
+    recipe_file = os.path.join(output_path, f"{stem}.html")
+    debug(f"saving to {recipe_file}")
+    try:
+        with open(recipe_file, "w") as f:
+            f.write(recipe_html)
+        print(f'Saved recipe "{recipe_title}" to {recipe_file}')
+    except (IOError, OSError) as ex:
+        error(f"Failed to write the recipe file {recipe_file}: {ex}")
 
 def save_recipe(recipe, output_path, output_format, image_url=None):
     image_tag = f'<img src="{image_url}" alt="{recipe.title}">' if image_url else ""
+    recipe_html = recipe.to_html(image_tag=image_tag)
     if output_format == "pdf":
-        recipe_html = recipe.to_html(image_tag=image_tag)
-        stem = recipe.title.lower().replace(" ", "_").replace("'", "")
-        pdf_file = os.path.join(output_path, f"{stem}.pdf")
-        debug(f"saving to {pdf_file}")
-        try:
-            command = ["wkhtmltopdf", "-", pdf_file]
-            process = subprocess.Popen(
-                command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            process.communicate(input=recipe_html.encode())
-            print(f"PDF saved to {pdf_file}")
-        except Exception as e:
-            error(f"Error generating PDF: {e}")
+        save_recipe_as_pdf(recipe_html, output_path, recipe.title)
     else:
-        recipe_html = recipe.to_html(image_tag=image_tag)
-        stem = recipe.title.lower().replace(" ", "_").replace("'", "")
-        recipe_file = os.path.join(output_path, f"{stem}.html")
-        debug(f"saving to {recipe_file}")
-        try:
-            with open(recipe_file, "w") as f:
-                f.write(recipe_html)
-        except (IOError, OSError) as ex:
-            error(f"failed to write the recipe file {recipe_file}")
-            debug(str(ex))
-        print(f'Saved recipe "{recipe.title}" to {recipe_file}')
+        save_recipe_as_html(recipe_html, output_path, recipe.title)
 
+def find_image_url(soup):
+    image_div = soup.find("div", class_="recipeheaderimage_imageAndButtonContainer__X9zME")
+    if image_div:
+        style = image_div.get("style", "")
+        if "background-image" in style:
+            return style.split("url(")[-1].split(")")[0].strip('"')
+        img_tag = image_div.find("img")
+        if img_tag:
+            return img_tag.get("src")
+    return None
 
 def download_and_save_recipe(url, output_path, output_format):
     print(f"Downloading recipe from: {url}")
@@ -68,26 +75,13 @@ def download_and_save_recipe(url, output_path, output_format):
         raw = requests.get(url).text
         print(f"Fetched HTML content, length: {len(raw)}")
     except requests.exceptions.RequestException as ex:
-        error(f"Failed to get the recipe from {url}")
-        debug(str(ex))
+        error(f"Failed to get the recipe from {url}: {ex}")
         return
     soup = BeautifulSoup(raw, "html.parser")
-    image_div = soup.find(
-        "div", class_="recipeheaderimage_imageAndButtonContainer__X9zME"
-    )
-    image_url = None
-    if image_div:
-        style = image_div.get("style", "")
-        if "background-image" in style:
-            image_url = style.split("url(")[-1].split(")")[0].strip('"')
-        if not image_url:
-            img_tag = image_div.find("img")
-            if img_tag:
-                image_url = img_tag.get("src")
+    image_url = find_image_url(soup)
     recipe = Recipe.from_html(raw)
     save_recipe(recipe, output_path, output_format, image_url=image_url)
     print("Recipe saved!")
-
 
 def parse_args(args):
     parser = argparse.ArgumentParser(
@@ -116,13 +110,11 @@ def parse_args(args):
     )
     return parser.parse_args(args)
 
-
 if __name__ == "__main__":
     print("Script started...")
     args = parse_args(sys.argv[1:])
     toggle_debug(args.debug)
 
-    # Handle interactive prompt if no URLs are provided
     if not args.url:
         url = input("Enter the NYT Cooking recipe URL: ").strip()
         if not url:
