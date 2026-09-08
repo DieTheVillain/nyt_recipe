@@ -1,3 +1,16 @@
-beautifulsoup4==4.12.2
-lxml==4.9.3
-wkhtmltopdf==0.2
+# Core
+beautifulsoup4>=4.12
+requests>=2.31
+
+# Discord bot (nyt_recipe/bot.py) — not needed for the CLI
+discord.py>=2.3
+aiohttp>=3.9
+
+# PDF output. WeasyPrint is preferred but needs the GTK runtime, which is not
+# present on a stock Windows install; without it the renderer falls back to
+# headless Chrome automatically. Neither is required for HTML or Markdown.
+weasyprint>=60 ; platform_system != "Windows"
+
+# Tests
+pytest>=8
+pypdf>=4

@@ -1,115 +1,121 @@
-# NYT Recipe Scraper
+# NYT Recipe
 
-A Python-based utility to scrape recipes from the [New York Times Cooking](https://cooking.nytimes.com/) website and export them as HTML or PDF files. This tool extracts the recipe title, ingredients, instructions, and optionally includes images. It is based on the work of Ian Brault found at https://github.com/ianbrault/nyt_recipe
+Save recipes from [NYT Cooking](https://cooking.nytimes.com/) as PDF, HTML or
+Markdown — from the command line, or from Discord with `/recipe`.
+
+Based on the work of Ian Brault at https://github.com/ianbrault/nyt_recipe
 
 ---
 
-## Features
-- Extract recipes from NYT Cooking.
-- Export recipes in HTML or PDF format.
+## What it captures
+
+Title, ingredients (with their **group headings**, such as "FOR THE CAKE"),
+preparation steps, and the things NYT publishes that most scrapers drop:
+description, author, total time, yield, nutrition, rating and tags.
+
+Quantities are preserved exactly as written — `1 ½ teaspoons`, `½ to 1 ½
+cups/118 to 355 milliliters` — with mixed numbers bound so they never break
+across a line.
 
 ---
 
 ## Installation
 
-### Prerequisites
-1. **Python 3.7 or higher**: Download and install Python from [python.org](https://www.python.org/downloads/).
-2. **`wkhtmltopdf`**: This is required for PDF generation.
-    - Download from [wkhtmltopdf.org](https://wkhtmltopdf.org/downloads.html).
-    - Install the appropriate version for your operating system.
-    - Ensure `wkhtmltopdf` is added to your system's PATH:
-        - **Windows**: Add the installation directory (e.g., `C:\Program Files\wkhtmltopdf\bin`) to your PATH environment variable.
-        - **Linux/Mac**: Add the binary's location (e.g., `/usr/local/bin`) to your PATH.
+Requires Python 3.9 or newer.
 
-### Installing Python Dependencies
-1. Clone the repository or download the ZIP:
-   ```bash
-   git clone https://github.com/yourusername/nyt-recipe-scraper.git
-   cd nyt-recipe-scraper
-2.
-   ```bash
-   pip install -r requirements.txt
+```bash
+git clone https://github.com/DieTheVillain/nyt_recipe.git
+cd nyt_recipe
+pip install -r nyt_recipe/requirements.txt
+```
 
-The key dependencies include:
-  - beautifulsoup4 for parsing HTML.
-  - wkhtmltopdf for PDF rendering.
+### PDF output
+
+PDF works out of the box if you have **Google Chrome** or **Edge** installed —
+no configuration needed.
+
+Optionally, install [WeasyPrint](https://doc.courtbouillon.org/weasyprint/)
+with its GTK runtime and it will be used instead. On Windows the GTK libraries
+are not present by default and WeasyPrint will fail to import; the renderer
+notices and falls back to Chrome on its own.
+
+HTML and Markdown need neither.
 
 ---
 
-## Usage
+## Command line
 
-### Basic Syntax
-Run the script using the following command:
+```bash
+python -m nyt_recipe.main [options] <URL> [<URL> ...]
+```
 
-  ```bash
-  python main.py [options] <NYT_recipe_URL>
-  ```
+| Option | Meaning |
+|---|---|
+| `-f`, `--format` | `pdf` (default), `html` or `markdown` |
+| `-t`, `--theme` | `light` (default), `dark` or `serif` |
+| `-o`, `--output` | Output directory (default `~/recipes`) |
+| `-d`, `--debug` | Verbose output |
+| `-h`, `--help` | Usage |
 
-### Options
-  - -d, --debug: Enables debug output for troubleshooting.
-  - -o, --output-dir <directory>: Specifies the directory to save the exported file(s).
-  - -f, --format <html|pdf>: Specifies the export format (html or pdf).
-  - -h, --help: Displays usage information.
--h, --help: Displays usage information.
--h, --help: Displays usage information.
--h, --help: Displays usage information.
+Run it with no URL and it will ask for one. Exits non-zero if any recipe
+could not be saved, so it is safe to drive from a script.
 
-## Examples
+### Examples
 
-### Export a Recipe to PDF
-  ```bash
-  python main.py -o C:\recipes\ -f pdf https://cooking.nytimes.com/recipes/1013451-longevity-noodles-with-chicken-ginger-and-mushrooms
-  ```
+```bash
+# A PDF in the serif theme
+python -m nyt_recipe.main -f pdf -t serif \
+  https://cooking.nytimes.com/recipes/1018301-apple-cider-honey-cake
 
-### Export a Recipe to HTML with Debugging
-  ```bash
-  python main.py -d -o ./recipes/ -f html https://cooking.nytimes.com/recipes/1013451-longevity-noodles-with-chicken-ginger-and-mushrooms
-
-  ```
+# Markdown, several at once, into a chosen folder
+python -m nyt_recipe.main -f markdown -o C:\recipes URL1 URL2
+```
 
 ---
 
-## Adding wkhtmltopdf to PATH
+## Discord bot
 
-### Windows
-1. Locate the wkhtmltopdf installation directory (e.g., C:\Program Files\wkhtmltopdf\bin).
-2. Open the Start Menu and search for "Environment Variables."
-3. In the System Properties window, click Environment Variables.
-4. Under "System Variables," find the Path variable, select it, and click Edit.
-5. Add the full path to the bin directory of wkhtmltopdf and click OK to save.
+`/recipe url:<NYT URL> [file_format:] [theme:] [preview:]`
 
-### Linux/Mac
-1. Add the path of wkhtmltopdf to your shell configuration file:
-  ```bash
-  export PATH="/path/to/wkhtmltopdf:$PATH"
-  ```
-2. Reload your shell configuration:
-  ```bash
-  source ~/.bashrc  # or ~/.zshrc, depending on your shell
-  ```
+`preview: true` prints the recipe into the channel instead of attaching a file.
 
----
+The bot reads its token from the `DISCORD_BOT_TOKEN` environment variable:
 
-## Known Issues
-1. Fractional Measurements: Special characters like ¼, ½, ¾ are properly sanitized and displayed as HTML entities for correct rendering.
-2. Debugging Errors: Use the -d flag to enable debug output for troubleshooting.
+```bash
+set DISCORD_BOT_TOKEN=your-token-here      # Windows
+export DISCORD_BOT_TOKEN=your-token-here   # macOS / Linux
+python -m nyt_recipe.bot
+```
+
+For local convenience it will also read `config.json` — copy
+`config.json.example` and fill it in. **That file is gitignored and must never
+be committed.** Set `RECIPE_OUTPUT_DIR` to change where files are written.
 
 ---
 
-## Contributing
-Feel free to submit pull requests or raise issues for any bugs or feature requests.
+## Tests
 
----
+```bash
+pip install pytest pypdf
+python -m pytest
+```
 
-## License
-This project is licensed under the MIT License. See LICENSE.txt for details.
+The tests run against saved NYT pages in `tests/fixtures/`, so they need no
+network and cannot drift with the site. They cover the full Unicode fraction
+set, ingredient grouping, the fallback path when the structured data is
+missing, and a real PDF render whose fraction glyphs are read back out of the
+finished file.
 
----
+Skip the PDF test with `-m "not slow"`.
 
+### When NYT changes their markup
 
-### Key Features:
-1. **Installation**: Provides detailed steps for installing dependencies (`beautifulsoup4`, `wkhtmltopdf`) and configuring `PATH`.
-2. **Usage Examples**: Includes practical examples for exporting recipes in different formats.
-3. **Debugging and Known Issues**: Mentions common errors and solutions. 
+The recipe data is read from the schema.org JSON-LD block NYT publishes for
+search engines, which is far more stable than their CSS class names — those
+are content-hashed and have broken this tool before. HTML scraping remains as
+a fallback.
 
-Let me know if any specific adjustments are needed!
+If a page yields no ingredients, extraction **raises** rather than returning an
+empty recipe, so a silent failure shows up immediately instead of arriving as
+a well-formatted PDF with nothing in it. Re-download the fixtures and run the
+tests to see what changed.

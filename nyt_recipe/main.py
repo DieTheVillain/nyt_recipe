@@ -1,126 +1,133 @@
+"""
+Command line entry point.
+
+Fetches one or more NYT Cooking recipes and writes them out as HTML, PDF or
+Markdown.
+"""
+
 import argparse
 import os
 import sys
-import requests
-import subprocess
-from bs4 import BeautifulSoup
-from output import *
-from recipe import Recipe
 
-def download_image(image_url, output_path, image_name):
+import requests
+
+from .extract import ExtractionError, from_html
+from .output import debug, error, toggle_debug
+from .render.html import to_html
+from .render.markdown import to_markdown
+from .render.pdf import PdfError, to_pdf
+
+# NYT serves a trimmed page to clients that look automated.
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"
+)
+
+FORMATS = ("pdf", "html", "markdown")
+THEMES = ("light", "dark", "serif")
+
+
+def fetch(url):
+    response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
+    response.raise_for_status()
+    return response.text
+
+
+def safe_filename(title):
+    """A recipe title is not a filename: slashes and colons are illegal."""
+    cleaned = "".join("-" if c in '<>:"/\\|?*' else c for c in title)
+    cleaned = " ".join(cleaned.split()).strip(" .")
+    return cleaned or "recipe"
+
+
+def save(recipe, output_path, output_format, theme="light"):
+    os.makedirs(output_path, exist_ok=True)
+    stem = safe_filename(recipe.title)
+
+    if output_format == "markdown":
+        path = os.path.join(output_path, f"{stem}.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(to_markdown(recipe))
+        return path
+
+    html = to_html(recipe, theme=theme)
+    if output_format == "html":
+        path = os.path.join(output_path, f"{stem}.html")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+        return path
+
+    path = os.path.join(output_path, f"{stem}.pdf")
+    return to_pdf(html, path)
+
+
+def download(url, output_path, output_format, theme="light"):
+    """Fetch, parse and save one recipe. Returns the path, or None on failure."""
+    debug(f"fetching {url}")
     try:
-        response = requests.get(image_url)
-        response.raise_for_status()
-        file_extension = os.path.splitext(image_url)[-1]
-        image_path = os.path.join(output_path, f"{image_name}{file_extension}")
-        with open(image_path, "wb") as img_file:
-            img_file.write(response.content)
-        print(f"Image saved as {image_path}")
-        return image_path
+        raw = fetch(url)
     except requests.exceptions.RequestException as ex:
-        error(f"Failed to download image from {image_url}: {ex}")
+        error(f"Could not fetch {url}: {ex}")
         return None
 
-def save_recipe_as_pdf(recipe_html, output_path, recipe_title):
-    stem = recipe_title.lower().replace(" ", "_").replace("'", "")
-    pdf_file = os.path.join(output_path, f"{stem}.pdf")
-    debug(f"saving to {pdf_file}")
     try:
-        command = ["wkhtmltopdf", "-", pdf_file]
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        process.communicate(input=recipe_html.encode())
-        print(f"PDF saved to {pdf_file}")
-    except Exception as e:
-        error(f"Error generating PDF: {e}")
+        recipe = from_html(raw)
+    except ExtractionError as ex:
+        # Loud on purpose. The old code logged a warning and carried on to
+        # write out a recipe with no ingredients.
+        error(f"Could not read a recipe from {url}: {ex}")
+        return None
 
-def save_recipe_as_html(recipe_html, output_path, recipe_title):
-    stem = recipe_title.lower().replace(" ", "_").replace("'", "")
-    recipe_file = os.path.join(output_path, f"{stem}.html")
-    debug(f"saving to {recipe_file}")
     try:
-        with open(recipe_file, "w") as f:
-            f.write(recipe_html)
-        print(f'Saved recipe "{recipe_title}" to {recipe_file}')
-    except (IOError, OSError) as ex:
-        error(f"Failed to write the recipe file {recipe_file}: {ex}")
+        path = save(recipe, output_path, output_format, theme=theme)
+    except PdfError as ex:
+        error(str(ex))
+        return None
 
-def save_recipe(recipe, output_path, output_format, image_url=None):
-    image_tag = f'<img src="{image_url}" alt="{recipe.title}">' if image_url else ""
-    recipe_html = recipe.to_html(image_tag=image_tag)
-    if output_format == "pdf":
-        save_recipe_as_pdf(recipe_html, output_path, recipe.title)
-    else:
-        save_recipe_as_html(recipe_html, output_path, recipe.title)
+    print(f'Saved "{recipe.title}" to {path}')
+    return path
 
-def find_image_url(soup):
-    image_div = soup.find("div", class_="recipeheaderimage_imageAndButtonContainer__X9zME")
-    if image_div:
-        style = image_div.get("style", "")
-        if "background-image" in style:
-            return style.split("url(")[-1].split(")")[0].strip('"')
-        img_tag = image_div.find("img")
-        if img_tag:
-            return img_tag.get("src")
-    return None
 
-def download_and_save_recipe(url, output_path, output_format):
-    print(f"Downloading recipe from: {url}")
-    try:
-        debug(f"Fetching from {url}")
-        raw = requests.get(url).text
-        print(f"Fetched HTML content, length: {len(raw)}")
-    except requests.exceptions.RequestException as ex:
-        error(f"Failed to get the recipe from {url}: {ex}")
-        return
-    soup = BeautifulSoup(raw, "html.parser")
-    image_url = find_image_url(soup)
-    recipe = Recipe.from_html(raw)
-    save_recipe(recipe, output_path, output_format, image_url=image_url)
-    print("Recipe saved!")
-
-def parse_args(args):
+def parse_args(argv):
     parser = argparse.ArgumentParser(
-        description="Downloads recipes from NYT Cooking and saves them in a format that can be easily imported by Apple Notes."
+        description="Download recipes from NYT Cooking as PDF, HTML or Markdown."
     )
     parser.add_argument(
-        "url",
-        metavar="URL",
-        nargs="*",  # Allow zero or more URLs
-        help="The NYT Cooking recipe URL(s) to download. Leave blank to prompt interactively.",
+        "url", metavar="URL", nargs="*",
+        help="Recipe URL(s). Leave blank to be prompted.",
     )
     parser.add_argument(
-        "-o",
-        "--output",
-        metavar="PATH",
-        default=os.path.join(os.environ.get("USERPROFILE", ""), "recipes"),
-        help="Output directory, defaults to ~/recipes",
+        "-o", "--output", metavar="PATH",
+        default=os.path.join(os.path.expanduser("~"), "recipes"),
+        help="Output directory (default: ~/recipes)",
     )
-    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug output")
-    parser.add_argument(
-        "-f",
-        "--format",
-        choices=["html", "pdf"],
-        default="html",
-        help="Format to save the recipe in (html or pdf), default is html",
-    )
-    return parser.parse_args(args)
+    parser.add_argument("-f", "--format", choices=FORMATS, default="pdf",
+                        help="Output format (default: pdf)")
+    parser.add_argument("-t", "--theme", choices=THEMES, default="light",
+                        help="Visual theme for HTML and PDF (default: light)")
+    parser.add_argument("-d", "--debug", action="store_true", help="Verbose output")
+    return parser.parse_args(argv)
 
-if __name__ == "__main__":
-    print("Script started...")
-    args = parse_args(sys.argv[1:])
+
+def main(argv=None):
+    args = parse_args(sys.argv[1:] if argv is None else argv)
     toggle_debug(args.debug)
 
-    if not args.url:
-        url = input("Enter the NYT Cooking recipe URL: ").strip()
-        if not url:
-            print("No URL provided. Exiting.")
-            sys.exit(1)
-        args.url = [url]
+    urls = args.url or [input("Enter the NYT Cooking recipe URL: ").strip()]
+    urls = [u for u in urls if u]
+    if not urls:
+        error("No URL given.")
+        return 1
 
-    for url in args.url:
-        download_and_save_recipe(url, args.output, args.format)
+    failures = 0
+    for url in urls:
+        if download(url, args.output, args.format, theme=args.theme) is None:
+            failures += 1
+
+    # A non-zero exit means something did not come out, which matters when
+    # this is driven from a script.
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
