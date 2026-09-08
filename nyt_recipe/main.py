@@ -26,6 +26,10 @@ USER_AGENT = (
 FORMATS = ("pdf", "html", "markdown")
 THEMES = ("light", "dark", "serif")
 
+# Saved files carry their origin, so a recipe stays identifiable once it is
+# sitting in a folder alongside files from everywhere else.
+FILENAME_PREFIX = "NYT Cooking - "
+
 
 def fetch(url):
     response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
@@ -40,9 +44,18 @@ def safe_filename(title):
     return cleaned or "recipe"
 
 
+def recipe_filename(title):
+    """The stem a saved recipe gets: its source, then a filesystem-safe title.
+
+    The prefix is added after sanitising, so a title made entirely of illegal
+    characters still produces a recognisable name rather than a bare one.
+    """
+    return f"{FILENAME_PREFIX}{safe_filename(title)}"
+
+
 def save(recipe, output_path, output_format, theme="light"):
     os.makedirs(output_path, exist_ok=True)
-    stem = safe_filename(recipe.title)
+    stem = recipe_filename(recipe.title)
 
     if output_format == "markdown":
         path = os.path.join(output_path, f"{stem}.md")

@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from nyt_recipe.main import safe_filename
@@ -68,3 +69,34 @@ def test_trimming_cuts_whole_lines_not_mid_word():
     out = trim(["alpha", "bravo", "charlie"], limit=40)
     for line in out.splitlines():
         assert line in ("alpha", "bravo", "charlie", "… (truncated)")
+
+
+def test_saved_files_are_prefixed_with_their_source(tmp_path):
+    """So a recipe is identifiable as NYT's once it is sitting in a folder
+    alongside files from anywhere else."""
+    from nyt_recipe.main import save
+
+    for fmt, suffix in (("markdown", ".md"), ("html", ".html")):
+        path = save(_recipe(), str(tmp_path), fmt)
+        assert os.path.basename(path) == f"NYT Cooking - Chicken Teriyaki{suffix}"
+
+
+def test_the_prefix_survives_a_title_full_of_illegal_characters(tmp_path):
+    from nyt_recipe.main import save
+
+    recipe = _recipe()
+    recipe.title = 'Pasta w/ "Sauce": Fast'
+    path = save(recipe, str(tmp_path), "markdown")
+    name = os.path.basename(path)
+    assert name.startswith("NYT Cooking - ")
+    for ch in r'<>:"/\|?*':
+        assert ch not in name
+
+
+def test_a_recipe_with_no_usable_title_still_gets_a_sensible_name(tmp_path):
+    from nyt_recipe.main import save
+
+    recipe = _recipe()
+    recipe.title = "///"
+    path = save(recipe, str(tmp_path), "markdown")
+    assert os.path.basename(path).startswith("NYT Cooking - ")
