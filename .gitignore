@@ -2,3 +2,7 @@
 **__pycache__
 dist
 
+
+# Local bot config — holds DISCORD_BOT_TOKEN. Never commit.
+config.json
+.env
